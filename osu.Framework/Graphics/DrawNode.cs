@@ -104,6 +104,9 @@ namespace osu.Framework.Graphics
 
         protected internal static void DrawOther(DrawNode node, IRenderer renderer)
         {
+            if (Rendering.TextureBindTrace.Recording)
+                Rendering.TextureBindTrace.CurrentSource = node.Source?.GetType().Name;
+
             renderer.EnterDrawNode(node);
             node.Draw(renderer);
             renderer.ExitDrawNode();

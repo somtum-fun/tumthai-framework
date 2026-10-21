@@ -112,12 +112,18 @@ namespace osu.Framework.Graphics
                 SharedData.DrawVersion = GetDrawVersion();
             }
 
-            BindTextureShader(renderer);
+            // TumThai: skip blitting when the buffered container is completely transparent and uses standard SrcAlpha blending
+            // (e.g. a shared background buffer with AlwaysPresent + Alpha 0 that only exists to be sampled by other drawables).
+            // BlendingParameters.None uses Source = One where alpha 0 is still visible, so check Blending.Source as well.
+            if (DrawColourInfo.Colour.MaxAlpha > 0 || DrawColourInfo.Blending.Source != BlendingType.SrcAlpha)
+            {
+                BindTextureShader(renderer);
 
-            base.Draw(renderer);
-            DrawContents(renderer);
+                base.Draw(renderer);
+                DrawContents(renderer);
 
-            UnbindTextureShader(renderer);
+                UnbindTextureShader(renderer);
+            }
         }
 
         /// <summary>

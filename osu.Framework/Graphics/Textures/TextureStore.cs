@@ -48,7 +48,7 @@ namespace osu.Framework.Graphics.Textures
         /// </summary>
         public readonly float ScaleAdjust;
 
-        public TextureStore(IRenderer renderer, IResourceStore<TextureUpload> store = null, bool useAtlas = true, TextureFilteringMode filteringMode = TextureFilteringMode.Linear, bool manualMipmaps = false, float scaleAdjust = 2)
+        public TextureStore(IRenderer renderer, IResourceStore<TextureUpload> store = null, bool useAtlas = true, TextureFilteringMode filteringMode = TextureFilteringMode.Linear, bool manualMipmaps = false, float scaleAdjust = 2, int? atlasSize = null)
         {
             if (store != null)
                 AddTextureSource(store);
@@ -61,7 +61,8 @@ namespace osu.Framework.Graphics.Textures
 
             if (useAtlas)
             {
-                int size = Math.Min(max_atlas_size, renderer.MaxTextureSize);
+                // TumThai: allow stores without mipmaps (such as FontStore) to request a larger atlas than the default 1024 limit.
+                int size = Math.Min(atlasSize ?? max_atlas_size, renderer.MaxTextureSize);
                 Atlas = new TextureAtlas(renderer, size, size, filteringMode: filteringMode, manualMipmaps: manualMipmaps);
             }
         }

@@ -828,6 +828,7 @@ namespace osu.Framework.Graphics.Rendering
                 return true;
             }
 
+            TextureBindTrace.Record(texture, "texture changed");
             FlushCurrentBatch(FlushBatchSource.BindTexture);
 
             if (!SetTextureImplementation(texture, unit))
@@ -849,6 +850,7 @@ namespace osu.Framework.Graphics.Rendering
         {
             if (wrapModeS != CurrentWrapModeS)
             {
+                TextureBindTrace.RecordWrap("wrap S changed");
                 FlushCurrentBatch(FlushBatchSource.BindTexture);
 
                 CurrentWrapModeS = wrapModeS;
@@ -857,6 +859,7 @@ namespace osu.Framework.Graphics.Rendering
 
             if (wrapModeT != CurrentWrapModeT)
             {
+                TextureBindTrace.RecordWrap("wrap T changed");
                 FlushCurrentBatch(FlushBatchSource.BindTexture);
 
                 CurrentWrapModeT = wrapModeT;

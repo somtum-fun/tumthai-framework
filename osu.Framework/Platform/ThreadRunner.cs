@@ -46,6 +46,21 @@ namespace osu.Framework.Platform
             }
         }
 
+        private bool unlimitedFrameRate;
+
+        /// <summary>
+        /// Whether to uncap the main/input thread completely in multi-threaded mode.
+        /// </summary>
+        public bool UnlimitedFrameRate
+        {
+            get => unlimitedFrameRate;
+            set
+            {
+                unlimitedFrameRate = value;
+                updateMainThreadRates();
+            }
+        }
+
         private double maximumInactiveHz = GameThread.DEFAULT_INACTIVE_HZ;
 
         public double MaximumInactiveHz
@@ -224,6 +239,11 @@ namespace osu.Framework.Platform
             {
                 mainThread.ActiveHz = maximumUpdateHz;
                 mainThread.InactiveHz = maximumInactiveHz;
+            }
+            else if (unlimitedFrameRate)
+            {
+                mainThread.ActiveHz = double.MaxValue;
+                mainThread.InactiveHz = GameThread.DEFAULT_INACTIVE_HZ;
             }
             else
             {

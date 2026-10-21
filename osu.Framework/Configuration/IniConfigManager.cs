@@ -26,6 +26,10 @@ namespace osu.Framework.Configuration
 
         private readonly Storage storage;
 
+        // TumThai: preserve keys in game.ini / framework.ini that are not known to this build's enum,
+        // so switching between TumThai and TumThai!Next builds does not wipe unknown settings.
+        private readonly Dictionary<string, string> preservedUnknownKeys = new Dictionary<string, string>();
+
         public IniConfigManager(Storage storage, IDictionary<TLookup, object> defaultOverrides = null)
             : base(defaultOverrides)
         {
@@ -58,7 +62,10 @@ namespace osu.Framework.Configuration
                         string val = line.AsSpan(equalsIndex + 1).Trim().ToString();
 
                         if (!Enum.TryParse(key, out TLookup lookup))
+                        {
+                            preservedUnknownKeys[key] = val;
                             continue;
+                        }
 
                         if (ConfigStore.TryGetValue(lookup, out IBindable b))
                         {
@@ -92,6 +99,9 @@ namespace osu.Framework.Configuration
                 {
                     foreach (var p in ConfigStore)
                         w.WriteLine(@"{0} = {1}", p.Key, p.Value.ToString(CultureInfo.InvariantCulture).AsNonNull().Replace("\n", "").Replace("\r", ""));
+
+                    foreach (var p in preservedUnknownKeys)
+                        w.WriteLine(@"{0} = {1}", p.Key, p.Value.Replace("\n", "").Replace("\r", ""));
                 }
             }
             catch

@@ -19,6 +19,10 @@ namespace osu.Framework.IO.Stores
 {
     public class FontStore : TextureStore, ITexturedGlyphLookupStore
     {
+        // TumThai: larger dedicated atlas for font glyphs (which do not use mipmaps) to prevent glyphs from
+        // spilling across multiple 1024x1024 pages and breaking draw batches. Capped at 2048 on mobile to save VRAM.
+        private static int fontAtlasSize => RuntimeInfo.IsMobile ? 2048 : 4096;
+
         private readonly List<IGlyphStore> glyphStores = new List<IGlyphStore>();
 
         private readonly List<ITexturedGlyphLookupStore> nestedFontStores = new List<ITexturedGlyphLookupStore>();
@@ -57,7 +61,7 @@ namespace osu.Framework.IO.Stores
 
         internal FontStore(IRenderer renderer, IResourceStore<TextureUpload> store = null, float scaleAdjust = 100, bool useAtlas = false, Storage cacheStorage = null,
                            TextureFilteringMode filteringMode = TextureFilteringMode.Linear)
-            : base(renderer, store, scaleAdjust: scaleAdjust, useAtlas: useAtlas, filteringMode: filteringMode)
+            : base(renderer, store, scaleAdjust: scaleAdjust, useAtlas: useAtlas, filteringMode: filteringMode, atlasSize: fontAtlasSize)
         {
             this.cacheStorage = cacheStorage;
         }

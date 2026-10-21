@@ -26,5 +26,8 @@ namespace osu.Framework.Configuration
 
         [Description("Basically unlimited")]
         Unlimited,
+
+        [Description("Unlimited")]
+        UnlimitedNoCap,
     }
 }

@@ -938,6 +938,7 @@ namespace osu.Framework.Platform
                     }
 
                     ResolvedRenderer = type;
+                    updateFrameSyncMode();
                     return;
                 }
                 catch
@@ -1215,6 +1216,8 @@ namespace osu.Framework.Platform
 
         private Bindable<FrameSync> frameSyncMode;
 
+        private Bindable<bool> allowDangerousUnlimitedNoCap;
+
         private IBindable<DisplayMode> currentDisplayMode;
 
         private Bindable<string> ignoredInputHandlers;
@@ -1256,6 +1259,9 @@ namespace osu.Framework.Platform
 
             frameSyncMode = Config.GetBindable<FrameSync>(FrameworkSetting.FrameSync);
             frameSyncMode.ValueChanged += _ => updateFrameSyncMode();
+
+            allowDangerousUnlimitedNoCap = Config.GetBindable<bool>(FrameworkSetting.AllowDangerousUnlimitedNoCap);
+            allowDangerousUnlimitedNoCap.BindValueChanged(_ => updateFrameSyncMode());
 
 #pragma warning disable 618
             // pragma region can be removed 20210911
@@ -1330,6 +1336,21 @@ namespace osu.Framework.Platform
 
         private void updateFrameSyncMode()
         {
+            bool deferred = Renderer is DeferredRenderer || isDeferredRenderer(ResolvedRenderer);
+            bool useDangerousNoCap = allowDangerousUnlimitedNoCap?.Value == true && frameSyncMode.Value == FrameSync.UnlimitedNoCap && !deferred;
+
+            if (AudioThread != null && InputThread != null)
+            {
+                double ioHz = useDangerousNoCap ? double.MaxValue : GameThread.DEFAULT_ACTIVE_HZ;
+                AudioThread.ActiveHz = ioHz;
+                AudioThread.InactiveHz = GameThread.DEFAULT_INACTIVE_HZ;
+                InputThread.ActiveHz = ioHz;
+                InputThread.InactiveHz = GameThread.DEFAULT_INACTIVE_HZ;
+
+                if (threadRunner != null)
+                    threadRunner.UnlimitedFrameRate = useDangerousNoCap;
+            }
+
             if (Window == null)
                 return;
 
@@ -1375,20 +1396,33 @@ namespace osu.Framework.Platform
                     break;
 
                 case FrameSync.Unlimited:
+                case FrameSync.UnlimitedNoCap:
                     drawLimiter = int.MaxValue;
                     updateLimiter = int.MaxValue;
                     break;
             }
 
-            if (!AllowBenchmarkUnlimitedFrames)
+            if (!AllowBenchmarkUnlimitedFrames && !useDangerousNoCap)
             {
-                drawLimiter = Math.Min(maximum_sane_fps, drawLimiter);
-                updateLimiter = Math.Min(maximum_sane_fps, updateLimiter);
+                if (frameSyncMode.Value != FrameSync.UnlimitedNoCap)
+                    drawLimiter = Math.Min(maximum_sane_fps, drawLimiter);
+
+                // The draw thread waits on the triple buffer from the update thread (draw <= update),
+                // so UnlimitedNoCap must also uncap update unless a deferred renderer is in use
+                // (where uncapped update queues command buffers faster than the GPU drains them -> OOM).
+                if (frameSyncMode.Value != FrameSync.UnlimitedNoCap || deferred)
+                    updateLimiter = Math.Min(maximum_sane_fps, updateLimiter);
             }
 
             MaximumDrawHz = drawLimiter;
             MaximumUpdateHz = executionMode.Value == ExecutionMode.SingleThread ? drawLimiter : updateLimiter;
         }
+
+        private static bool isDeferredRenderer(RendererType t) =>
+            t == RendererType.Deferred_Direct3D11
+            || t == RendererType.Deferred_Metal
+            || t == RendererType.Deferred_OpenGL
+            || t == RendererType.Deferred_Vulkan;
 
         private void setVSyncMode()
         {
