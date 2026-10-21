@@ -1,4 +1,4 @@
-﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
+// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
@@ -7,9 +7,11 @@ using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.OS;
+using Android.Views;
 using Android.Webkit;
 using ManagedBass;
 using Org.Libsdl.App;
+using osu.Framework.Audio;
 using osu.Framework.Extensions.ObjectExtensions;
 using osu.Framework.Logging;
 using Debug = System.Diagnostics.Debug;
@@ -60,11 +62,79 @@ namespace osu.Framework.Android
             recycleTempContentDirectory();
 
             base.OnCreate(savedInstanceState);
+
+            requestHighRefreshRateDisplayMode();
+        }
+
+        public override void OnWindowFocusChanged(bool hasFocus)
+        {
+            base.OnWindowFocusChanged(hasFocus);
+
+            if (hasFocus)
+                requestHighRefreshRateDisplayMode();
+        }
+
+        private void requestHighRefreshRateDisplayMode()
+        {
+            if (!OperatingSystem.IsAndroidVersionAtLeast(23) || Window == null)
+                return;
+
+            try
+            {
+#pragma warning disable CA1422
+                Display? display = OperatingSystem.IsAndroidVersionAtLeast(30) ? Display : WindowManager?.DefaultDisplay;
+#pragma warning restore CA1422
+
+                var modes = display?.GetSupportedModes();
+                if (modes == null || modes.Length == 0)
+                    return;
+
+                var currentMode = display?.GetMode();
+                Display.Mode? bestMode = null;
+
+                foreach (var mode in modes)
+                {
+                    if (currentMode != null && (mode.PhysicalWidth != currentMode.PhysicalWidth || mode.PhysicalHeight != currentMode.PhysicalHeight))
+                        continue;
+
+                    if (bestMode == null || mode.RefreshRate > bestMode.RefreshRate)
+                        bestMode = mode;
+                }
+
+                if (bestMode == null)
+                {
+                    foreach (var mode in modes)
+                    {
+                        if (bestMode == null || mode.RefreshRate > bestMode.RefreshRate)
+                            bestMode = mode;
+                    }
+                }
+
+                if (bestMode == null)
+                    return;
+
+                var attributes = Window.Attributes;
+                if (attributes == null)
+                    return;
+
+                if (attributes.PreferredDisplayModeId != bestMode.ModeId || Math.Abs(attributes.PreferredRefreshRate - bestMode.RefreshRate) > 0.1f)
+                {
+                    attributes.PreferredDisplayModeId = bestMode.ModeId;
+                    attributes.PreferredRefreshRate = bestMode.RefreshRate;
+                    Window.Attributes = attributes;
+                    Logger.Log($"[Android] Requested display mode #{bestMode.ModeId}: {bestMode.PhysicalWidth}x{bestMode.PhysicalHeight} @ {bestMode.RefreshRate:0.#}Hz");
+                }
+            }
+            catch (Exception e)
+            {
+                Logger.Log($"[Android] Failed to set preferred high refresh rate display mode: {e.Message}");
+            }
         }
 
         protected override void OnStop()
         {
             base.OnStop();
+            AndroidAAudioBridge.Pause();
             Bass.Pause();
         }
 
@@ -72,6 +142,7 @@ namespace osu.Framework.Android
         {
             base.OnRestart();
             Bass.Start();
+            AndroidAAudioBridge.Resume();
         }
 
         #region Activity result handling

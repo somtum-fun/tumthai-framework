@@ -1,4 +1,4 @@
-﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
+// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
 using osu.Framework.Statistics;
@@ -51,10 +51,24 @@ namespace osu.Framework.Threading
 
         private static readonly GlobalStatistic<double> cpu_usage = GlobalStatistics.Get<double>("Audio", "Bass CPU%");
 
+        /// <summary>
+        /// Estimated audio output latency in milliseconds for the currently active audio pipeline.
+        /// </summary>
+        internal readonly Bindable<double> OutputLatency = new Bindable<double>();
+
         private long frameCount;
 
         private void onNewFrame()
         {
+            if (RuntimeInfo.OS == RuntimeInfo.Platform.Android && androidAAudioEnabled && AndroidAAudioBridge.ConsumeDisconnectRequest())
+            {
+                if (initialised_devices.Count > 0)
+                    updateAndroidAAudio(notifyManagers: true);
+            }
+
+            if (frameCount % 200 == 0)
+                OutputLatency.Value = getOutputLatencyMs();
+
             if (frameCount++ % 1000 == 0)
                 cpu_usage.Value = Bass.CPUUsage;
 
@@ -123,6 +137,10 @@ namespace osu.Framework.Threading
 
         private WasapiProcedure? wasapiProcedure;
         private WasapiNotifyProcedure? wasapiNotifyProcedure;
+        private int? wasapiMixerHandle;
+
+        private bool androidAAudioEnabled;
+        private int androidPreferredSampleRate;
 
         /// <summary>
         /// If a global mixer is being used, this will be the BASS handle for it.
@@ -139,12 +157,24 @@ namespace osu.Framework.Threading
             if (!Bass.Init(deviceId, Flags: (DeviceInitFlags)128)) // 128 == BASS_DEVICE_REINIT
                 return false;
 
-            if (useExperimentalWasapi)
+            if (RuntimeInfo.OS == RuntimeInfo.Platform.Android)
+            {
+                updateAndroidAAudio(notifyManagers: false);
+            }
+            else if (useExperimentalWasapi)
+            {
                 attemptWasapiInitialisation();
+            }
             else
+            {
                 freeWasapi();
+            }
 
             initialised_devices.Add(deviceId);
+            OutputLatency.Value = getOutputLatencyMs();
+
+            // Clear any non-fatal BASS error code left by probing so AudioManager.InitBass does not report a false fault.
+            Bass.GetDeviceInfo(0, out _);
             return true;
         }
 
@@ -160,14 +190,127 @@ namespace osu.Framework.Threading
                 Bass.Free();
             }
 
-            freeWasapi();
+            if (RuntimeInfo.OS == RuntimeInfo.Platform.Android)
+            {
+                AndroidAAudioBridge.Stop();
+                globalMixerHandle.Value = null;
+            }
+            else
+            {
+                freeWasapi();
+            }
 
             if (selectedDevice != deviceId && canSelectDevice(selectedDevice))
                 Bass.CurrentDevice = selectedDevice;
 
             initialised_devices.Remove(deviceId);
+            OutputLatency.Value = getOutputLatencyMs();
 
             static bool canSelectDevice(int deviceId) => Bass.GetDeviceInfo(deviceId, out var deviceInfo) && deviceInfo.IsInitialized;
+        }
+
+        internal void ConfigureAndroidAAudio(bool enabled, int preferredSampleRate = 0)
+        {
+            if (RuntimeInfo.OS != RuntimeInfo.Platform.Android)
+                return;
+
+            void apply()
+            {
+                bool changed = androidAAudioEnabled != enabled || (preferredSampleRate > 0 && androidPreferredSampleRate != preferredSampleRate);
+                androidAAudioEnabled = enabled;
+                if (preferredSampleRate > 0)
+                    androidPreferredSampleRate = preferredSampleRate;
+
+                if (initialised_devices.Count == 0)
+                    return;
+
+                if (changed || (enabled && !AndroidAAudioBridge.IsActive) || (!enabled && AndroidAAudioBridge.IsActive))
+                    updateAndroidAAudio(notifyManagers: true);
+            }
+
+            if (IsCurrent)
+                apply();
+            else
+                Scheduler.Add(apply);
+        }
+
+        private void updateAndroidAAudio(bool notifyManagers)
+        {
+            if (RuntimeInfo.OS != RuntimeInfo.Platform.Android)
+                return;
+
+            if (androidAAudioEnabled)
+            {
+                if (AndroidAAudioBridge.Start(androidPreferredSampleRate, out int mixerHandle))
+                    globalMixerHandle.Value = mixerHandle;
+                else
+                    globalMixerHandle.Value = null;
+            }
+            else
+            {
+                AndroidAAudioBridge.Stop();
+                globalMixerHandle.Value = null;
+            }
+
+            OutputLatency.Value = getOutputLatencyMs();
+
+            if (notifyManagers && Bass.CurrentDevice > 0)
+            {
+                lock (managers)
+                {
+                    foreach (var m in managers)
+                        m.UpdateDevice(Bass.CurrentDevice);
+                }
+            }
+        }
+
+        private double getOutputLatencyMs()
+        {
+            if (AndroidAAudioBridge.IsActive)
+                return AndroidAAudioBridge.GetLatencyMs();
+
+            if (initialised_devices.Count == 0)
+                return 0;
+
+            double latency = 0;
+
+            try
+            {
+                if (RuntimeInfo.OS == RuntimeInfo.Platform.Windows && wasapiMixerHandle.HasValue && BassWasapi.GetInfo(out WasapiInfo wasapiInfo) && wasapiInfo.Frequency > 0)
+                {
+                    int queuedBytes = BassWasapi.GetData(IntPtr.Zero, (int)DataFlags.Available);
+
+                    if (queuedBytes > 0)
+                    {
+                        int bytesPerSample = wasapiInfo.Format switch
+                        {
+                            WasapiFormat.Float => 4,
+                            WasapiFormat.Bit32 => 4,
+                            WasapiFormat.Bit24 => 3,
+                            WasapiFormat.Bit16 => 2,
+                            WasapiFormat.Bit8 => 1,
+                            _ => 2,
+                        };
+
+                        latency = queuedBytes / ((double)wasapiInfo.Frequency * Math.Max(1, wasapiInfo.Channels) * bytesPerSample) * 1000.0;
+                    }
+                }
+                else if (Bass.GetInfo(out var bassInfo) && bassInfo.Latency > 0)
+                {
+                    latency = bassInfo.Latency;
+                }
+                else
+                {
+                    latency = Math.Max(0, Bass.DeviceBufferLength);
+                }
+            }
+            catch
+            {
+                latency = 0;
+            }
+
+            Bass.GetDeviceInfo(0, out _);
+            return latency;
         }
 
         /// <summary>
@@ -249,7 +392,9 @@ namespace osu.Framework.Threading
                 return false;
 
             BassWasapi.GetInfo(out var wasapiInfo);
-            globalMixerHandle.Value = BassMix.CreateMixerStream(wasapiInfo.Frequency, wasapiInfo.Channels, BassFlags.MixerNonStop | BassFlags.Decode | BassFlags.Float);
+            int mixer = BassMix.CreateMixerStream(wasapiInfo.Frequency, wasapiInfo.Channels, BassFlags.MixerNonStop | BassFlags.Decode | BassFlags.Float);
+            wasapiMixerHandle = mixer;
+            globalMixerHandle.Value = mixer;
             BassWasapi.Start();
 
             BassWasapi.SetNotify(wasapiNotifyProcedure);
@@ -258,13 +403,16 @@ namespace osu.Framework.Threading
 
         private void freeWasapi()
         {
-            if (globalMixerHandle.Value == null) return;
+            if (wasapiMixerHandle == null) return;
 
             // The mixer probably doesn't need to be recycled. Just keeping things sane for now.
-            Bass.StreamFree(globalMixerHandle.Value.Value);
+            Bass.StreamFree(wasapiMixerHandle.Value);
             BassWasapi.Stop();
             BassWasapi.Free();
-            globalMixerHandle.Value = null;
+            wasapiMixerHandle = null;
+
+            if (!AndroidAAudioBridge.IsActive)
+                globalMixerHandle.Value = null;
         }
 
         #endregion

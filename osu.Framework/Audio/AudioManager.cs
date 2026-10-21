@@ -1,4 +1,4 @@
-﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
+// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
 #nullable disable
@@ -125,11 +125,25 @@ namespace osu.Framework.Audio
 
         /// <summary>
         /// Whether a global mixer is being used for audio routing.
-        /// For now, this is only the case on Windows when using shared mode WASAPI initialisation.
+        /// This is true on Windows when using shared mode WASAPI initialisation, and on Android when using low-latency AAudio output.
         /// </summary>
         public IBindable<bool> UsingGlobalMixer => usingGlobalMixer;
 
         private readonly Bindable<bool> usingGlobalMixer = new BindableBool();
+
+        /// <summary>
+        /// Estimated audio output latency in milliseconds for the currently active audio pipeline.
+        /// </summary>
+        public IBindable<double> OutputLatency => thread.OutputLatency;
+
+        /// <summary>
+        /// Enables or disables low-latency Android AAudio output routed through a BASS decode mixer.
+        /// Has no effect on non-Android platforms.
+        /// </summary>
+        /// <param name="enabled">Whether low-latency Android AAudio output should be enabled.</param>
+        /// <param name="preferredSampleRate">Optional preferred hardware sample rate in Hz (0 to auto-detect).</param>
+        public void SetAndroidLowLatencyAudio(bool enabled, int preferredSampleRate = 0)
+            => thread.ConfigureAndroidAAudio(enabled, preferredSampleRate);
 
         /// <summary>
         /// If a global mixer is being used, this will be the BASS handle for it.

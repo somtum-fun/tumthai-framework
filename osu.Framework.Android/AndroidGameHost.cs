@@ -1,10 +1,11 @@
-﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
+// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
 using System.Collections.Generic;
 using Android.App;
 using Android.Content;
+using Android.OS;
 using AndroidX.Core.Content;
 using osu.Framework.Android.Graphics.Textures;
 using osu.Framework.Android.Graphics.Video;
@@ -194,6 +195,33 @@ namespace osu.Framework.Android
         public override bool SuspendToBackground()
         {
             return activity.MoveTaskToBack(true);
+        }
+
+        public override void SetSustainedPerformanceMode(bool enabled)
+        {
+            if (!OperatingSystem.IsAndroidVersionAtLeast(24))
+                return;
+
+            activity.RunOnUiThread(() =>
+            {
+                if (!OperatingSystem.IsAndroidVersionAtLeast(24))
+                    return;
+
+                try
+                {
+                    var powerManager = activity.GetSystemService(Context.PowerService) as PowerManager;
+
+                    if (powerManager?.IsSustainedPerformanceModeSupported == true)
+                    {
+                        activity.Window?.SetSustainedPerformanceMode(enabled);
+                        Logger.Log($"[Android] Sustained performance mode {(enabled ? "enabled" : "disabled")}.");
+                    }
+                }
+                catch (Exception e)
+                {
+                    Logger.Log($"[Android] Failed to set sustained performance mode: {e.Message}");
+                }
+            });
         }
 
         protected override void Dispose(bool disposing)

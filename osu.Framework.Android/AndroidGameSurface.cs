@@ -1,4 +1,4 @@
-﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
+// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
@@ -56,6 +56,44 @@ namespace osu.Framework.Android
         {
             base.HandleResume();
             isSurfaceReady = true;
+            requestSurfaceHighFrameRate();
+        }
+
+        public override void SurfaceChanged(ISurfaceHolder? holder, [GeneratedEnum] global::Android.Graphics.Format format, int width, int height)
+        {
+            base.SurfaceChanged(holder, format, width, height);
+            requestSurfaceHighFrameRate();
+        }
+
+        private void requestSurfaceHighFrameRate()
+        {
+            if (!OperatingSystem.IsAndroidVersionAtLeast(30))
+                return;
+
+            try
+            {
+                var surface = Holder?.Surface;
+                if (surface == null || !surface.IsValid)
+                    return;
+
+                var modes = activity.Display?.GetSupportedModes();
+                float maxRefreshRate = 0f;
+
+                if (modes != null)
+                {
+                    foreach (var mode in modes)
+                    {
+                        if (mode.RefreshRate > maxRefreshRate)
+                            maxRefreshRate = mode.RefreshRate;
+                    }
+                }
+
+                if (maxRefreshRate > 60f)
+                    surface.SetFrameRate(maxRefreshRate, (int)SurfaceFrameRateCompatibility.Default);
+            }
+            catch
+            {
+            }
         }
 
         public override WindowInsets? OnApplyWindowInsets(View? view, WindowInsets? insets)

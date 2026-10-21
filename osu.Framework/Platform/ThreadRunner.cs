@@ -1,6 +1,3 @@
-﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
-// See the LICENCE file in the repository root for full licence text.
-
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
@@ -57,6 +54,22 @@ namespace osu.Framework.Platform
             set
             {
                 unlimitedFrameRate = value;
+                updateMainThreadRates();
+            }
+        }
+
+        private double? mainThreadActiveHzOverride;
+
+        /// <summary>
+        /// Optional override for the active rate of the main/input thread in multi-threaded mode.
+        /// When null, <see cref="GameThread.DEFAULT_ACTIVE_HZ"/> is used.
+        /// </summary>
+        public double? MainThreadActiveHzOverride
+        {
+            get => mainThreadActiveHzOverride;
+            set
+            {
+                mainThreadActiveHzOverride = value;
                 updateMainThreadRates();
             }
         }
@@ -247,7 +260,7 @@ namespace osu.Framework.Platform
             }
             else
             {
-                mainThread.ActiveHz = GameThread.DEFAULT_ACTIVE_HZ;
+                mainThread.ActiveHz = mainThreadActiveHzOverride ?? GameThread.DEFAULT_ACTIVE_HZ;
                 mainThread.InactiveHz = GameThread.DEFAULT_INACTIVE_HZ;
             }
         }

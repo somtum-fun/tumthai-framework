@@ -1,4 +1,4 @@
-﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
+// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
 #nullable disable
@@ -654,6 +654,14 @@ namespace osu.Framework.Platform
         }
 
         /// <summary>
+        /// Requests the host operating system to enter or exit sustained performance mode (e.g. Android Sustained Performance API).
+        /// </summary>
+        /// <param name="enabled">Whether sustained performance mode should be active.</param>
+        public virtual void SetSustainedPerformanceMode(bool enabled)
+        {
+        }
+
+        /// <summary>
         /// Schedules the game to exit in the next frame (or immediately if <paramref name="immediately"/> is true).
         /// </summary>
         /// <remarks>
@@ -851,6 +859,7 @@ namespace osu.Framework.Platform
                     yield return RendererType.Direct3D11;
                     yield return RendererType.Deferred_Direct3D11;
                     yield return RendererType.OpenGL;
+                    yield return RendererType.Vulkan;
                     yield return RendererType.Deferred_Vulkan;
 
                     break;
@@ -858,6 +867,7 @@ namespace osu.Framework.Platform
                 case RuntimeInfo.Platform.Linux:
                     yield return RendererType.OpenGL;
                     yield return RendererType.Deferred_OpenGL;
+                    yield return RendererType.Vulkan;
                     yield return RendererType.Deferred_Vulkan;
 
                     break;
@@ -1218,6 +1228,15 @@ namespace osu.Framework.Platform
 
         private Bindable<bool> allowDangerousUnlimitedNoCap;
 
+        /// <summary>
+        /// Target rate (in Hz) for the input, audio, and (in multi-threaded mode) update threads.
+        /// </summary>
+        public BindableInt InputAudioHz { get; } = new BindableInt(GameThread.DEFAULT_ACTIVE_HZ)
+        {
+            MinValue = 250,
+            MaxValue = 16000,
+        };
+
         private IBindable<DisplayMode> currentDisplayMode;
 
         private Bindable<string> ignoredInputHandlers;
@@ -1262,6 +1281,8 @@ namespace osu.Framework.Platform
 
             allowDangerousUnlimitedNoCap = Config.GetBindable<bool>(FrameworkSetting.AllowDangerousUnlimitedNoCap);
             allowDangerousUnlimitedNoCap.BindValueChanged(_ => updateFrameSyncMode());
+
+            InputAudioHz.BindValueChanged(_ => updateFrameSyncMode());
 
 #pragma warning disable 618
             // pragma region can be removed 20210911
@@ -1338,17 +1359,21 @@ namespace osu.Framework.Platform
         {
             bool deferred = Renderer is DeferredRenderer || isDeferredRenderer(ResolvedRenderer);
             bool useDangerousNoCap = allowDangerousUnlimitedNoCap?.Value == true && frameSyncMode.Value == FrameSync.UnlimitedNoCap && !deferred;
+            int configuredHz = InputAudioHz.Value > 0 ? Math.Clamp(InputAudioHz.Value, InputAudioHz.MinValue, InputAudioHz.MaxValue) : GameThread.DEFAULT_ACTIVE_HZ;
 
             if (AudioThread != null && InputThread != null)
             {
-                double ioHz = useDangerousNoCap ? double.MaxValue : GameThread.DEFAULT_ACTIVE_HZ;
+                double ioHz = useDangerousNoCap ? double.MaxValue : configuredHz;
                 AudioThread.ActiveHz = ioHz;
                 AudioThread.InactiveHz = GameThread.DEFAULT_INACTIVE_HZ;
                 InputThread.ActiveHz = ioHz;
                 InputThread.InactiveHz = GameThread.DEFAULT_INACTIVE_HZ;
 
                 if (threadRunner != null)
+                {
                     threadRunner.UnlimitedFrameRate = useDangerousNoCap;
+                    threadRunner.MainThreadActiveHzOverride = useDangerousNoCap ? null : configuredHz;
+                }
             }
 
             if (Window == null)
@@ -1411,7 +1436,7 @@ namespace osu.Framework.Platform
                 // so UnlimitedNoCap must also uncap update unless a deferred renderer is in use
                 // (where uncapped update queues command buffers faster than the GPU drains them -> OOM).
                 if (frameSyncMode.Value != FrameSync.UnlimitedNoCap || deferred)
-                    updateLimiter = Math.Min(maximum_sane_fps, updateLimiter);
+                    updateLimiter = configuredHz;
             }
 
             MaximumDrawHz = drawLimiter;
