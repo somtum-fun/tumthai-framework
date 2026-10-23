@@ -1237,6 +1237,22 @@ namespace osu.Framework.Platform
             MaxValue = 16000,
         };
 
+        /// <summary>
+        /// Preferred display refresh rate in Hz (0 = automatic / highest available hardware refresh rate).
+        /// </summary>
+        public BindableInt PreferredDisplayRefreshRate { get; } = new BindableInt(0)
+        {
+            MinValue = 0,
+            MaxValue = 1000,
+        };
+
+        /// <summary>
+        /// Applies a preferred hardware display refresh rate in Hz (0 = automatic / highest available).
+        /// </summary>
+        public virtual void SetPreferredDisplayRefreshRate(int targetHz)
+        {
+        }
+
         private IBindable<DisplayMode> currentDisplayMode;
 
         private Bindable<string> ignoredInputHandlers;
@@ -1283,6 +1299,12 @@ namespace osu.Framework.Platform
             allowDangerousUnlimitedNoCap.BindValueChanged(_ => updateFrameSyncMode());
 
             InputAudioHz.BindValueChanged(_ => updateFrameSyncMode());
+
+            PreferredDisplayRefreshRate.BindValueChanged(v =>
+            {
+                SetPreferredDisplayRefreshRate(v.NewValue);
+                updateFrameSyncMode();
+            });
 
 #pragma warning disable 618
             // pragma region can be removed 20210911
@@ -1379,7 +1401,9 @@ namespace osu.Framework.Platform
             if (Window == null)
                 return;
 
-            double refreshRate = Window.CurrentDisplayMode.Value.RefreshRate;
+            double refreshRate = PreferredDisplayRefreshRate.Value > 0
+                ? PreferredDisplayRefreshRate.Value
+                : Window.CurrentDisplayMode.Value.RefreshRate;
 
             // For invalid refresh rates let's assume 60 Hz as it is most common.
             if (refreshRate <= 0)

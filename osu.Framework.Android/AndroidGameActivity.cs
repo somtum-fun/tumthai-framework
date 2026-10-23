@@ -37,6 +37,22 @@ namespace osu.Framework.Android
 
         internal static AndroidGameSurface Surface => (AndroidGameSurface)MSurface!;
 
+        internal int PreferredRefreshRateHz { get; private set; }
+
+        internal void SetPreferredRefreshRate(int targetHz)
+        {
+            PreferredRefreshRateHz = Math.Max(0, targetHz);
+
+            if (!OperatingSystem.IsAndroidVersionAtLeast(23))
+                return;
+
+            RunOnUiThread(() =>
+            {
+                requestPreferredDisplayMode();
+                (MSurface as AndroidGameSurface)?.RequestSurfaceFrameRate(PreferredRefreshRateHz);
+            });
+        }
+
         protected abstract Game CreateGame();
 
         protected override string[] GetLibraries() => new string[] { "SDL3" };
@@ -63,7 +79,7 @@ namespace osu.Framework.Android
 
             base.OnCreate(savedInstanceState);
 
-            requestHighRefreshRateDisplayMode();
+            requestPreferredDisplayMode();
         }
 
         public override void OnWindowFocusChanged(bool hasFocus)
@@ -71,10 +87,10 @@ namespace osu.Framework.Android
             base.OnWindowFocusChanged(hasFocus);
 
             if (hasFocus)
-                requestHighRefreshRateDisplayMode();
+                requestPreferredDisplayMode();
         }
 
-        private void requestHighRefreshRateDisplayMode()
+        private void requestPreferredDisplayMode()
         {
             if (!OperatingSystem.IsAndroidVersionAtLeast(23) || Window == null)
                 return;
@@ -90,14 +106,32 @@ namespace osu.Framework.Android
                     return;
 
                 var currentMode = display?.GetMode();
+                int targetHz = PreferredRefreshRateHz;
                 Display.Mode? bestMode = null;
+
+                bool isBetterCandidate(Display.Mode candidate, Display.Mode? currentBest)
+                {
+                    if (currentBest == null)
+                        return true;
+
+                    if (targetHz <= 0)
+                        return candidate.RefreshRate > currentBest.RefreshRate;
+
+                    float candidateDiff = Math.Abs(candidate.RefreshRate - targetHz);
+                    float bestDiff = Math.Abs(currentBest.RefreshRate - targetHz);
+
+                    if (Math.Abs(candidateDiff - bestDiff) > 0.5f)
+                        return candidateDiff < bestDiff;
+
+                    return candidate.RefreshRate > currentBest.RefreshRate;
+                }
 
                 foreach (var mode in modes)
                 {
                     if (currentMode != null && (mode.PhysicalWidth != currentMode.PhysicalWidth || mode.PhysicalHeight != currentMode.PhysicalHeight))
                         continue;
 
-                    if (bestMode == null || mode.RefreshRate > bestMode.RefreshRate)
+                    if (isBetterCandidate(mode, bestMode))
                         bestMode = mode;
                 }
 
@@ -105,7 +139,7 @@ namespace osu.Framework.Android
                 {
                     foreach (var mode in modes)
                     {
-                        if (bestMode == null || mode.RefreshRate > bestMode.RefreshRate)
+                        if (isBetterCandidate(mode, bestMode))
                             bestMode = mode;
                     }
                 }
@@ -122,12 +156,12 @@ namespace osu.Framework.Android
                     attributes.PreferredDisplayModeId = bestMode.ModeId;
                     attributes.PreferredRefreshRate = bestMode.RefreshRate;
                     Window.Attributes = attributes;
-                    Logger.Log($"[Android] Requested display mode #{bestMode.ModeId}: {bestMode.PhysicalWidth}x{bestMode.PhysicalHeight} @ {bestMode.RefreshRate:0.#}Hz");
+                    Logger.Log($"[Android] Requested display mode #{bestMode.ModeId}: {bestMode.PhysicalWidth}x{bestMode.PhysicalHeight} @ {bestMode.RefreshRate:0.#}Hz (target={(targetHz > 0 ? $"{targetHz}Hz" : "Auto")})");
                 }
             }
             catch (Exception e)
             {
-                Logger.Log($"[Android] Failed to set preferred high refresh rate display mode: {e.Message}");
+                Logger.Log($"[Android] Failed to set preferred display mode: {e.Message}");
             }
         }
 

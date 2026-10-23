@@ -45,6 +45,11 @@ namespace osu.Framework.Android
 
         protected override IWindow CreateWindow(GraphicsSurfaceType preferredSurface) => new AndroidGameWindow(preferredSurface, Options.FriendlyGameName);
 
+        public override void SetPreferredDisplayRefreshRate(int targetHz)
+        {
+            activity.SetPreferredRefreshRate(targetHz);
+        }
+
         protected override void DrawFrame()
         {
             if (AndroidGameActivity.Surface.IsSurfaceReady)

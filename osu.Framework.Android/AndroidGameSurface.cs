@@ -56,16 +56,16 @@ namespace osu.Framework.Android
         {
             base.HandleResume();
             isSurfaceReady = true;
-            requestSurfaceHighFrameRate();
+            RequestSurfaceFrameRate();
         }
 
         public override void SurfaceChanged(ISurfaceHolder? holder, [GeneratedEnum] global::Android.Graphics.Format format, int width, int height)
         {
             base.SurfaceChanged(holder, format, width, height);
-            requestSurfaceHighFrameRate();
+            RequestSurfaceFrameRate();
         }
 
-        private void requestSurfaceHighFrameRate()
+        internal void RequestSurfaceFrameRate(int preferredHz = -1)
         {
             if (!OperatingSystem.IsAndroidVersionAtLeast(30))
                 return;
@@ -75,6 +75,14 @@ namespace osu.Framework.Android
                 var surface = Holder?.Surface;
                 if (surface == null || !surface.IsValid)
                     return;
+
+                int targetHz = preferredHz >= 0 ? preferredHz : activity.PreferredRefreshRateHz;
+
+                if (targetHz > 0)
+                {
+                    surface.SetFrameRate(targetHz, (int)SurfaceFrameRateCompatibility.Default);
+                    return;
+                }
 
                 var modes = activity.Display?.GetSupportedModes();
                 float maxRefreshRate = 0f;
