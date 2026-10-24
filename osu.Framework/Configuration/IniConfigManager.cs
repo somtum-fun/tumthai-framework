@@ -88,6 +88,12 @@ namespace osu.Framework.Configuration
             }
         }
 
+        /// <summary>
+        /// How a setting's value is written to the file (by default its invariant string). TumThai!Next: lets a value
+        /// only this framework has be written as one stock osu!framework reads (the same file is shared with TumThai).
+        /// </summary>
+        protected virtual string SerialiseValue(TLookup lookup, IBindable bindable) => bindable.ToString(CultureInfo.InvariantCulture);
+
         protected override bool PerformSave()
         {
             if (string.IsNullOrEmpty(Filename)) return false;
@@ -98,7 +104,7 @@ namespace osu.Framework.Configuration
                 using (var w = new StreamWriter(stream))
                 {
                     foreach (var p in ConfigStore)
-                        w.WriteLine(@"{0} = {1}", p.Key, p.Value.ToString(CultureInfo.InvariantCulture).AsNonNull().Replace("\n", "").Replace("\r", ""));
+                        w.WriteLine(@"{0} = {1}", p.Key, SerialiseValue(p.Key, p.Value).AsNonNull().Replace("\n", "").Replace("\r", ""));
 
                     foreach (var p in preservedUnknownKeys)
                         w.WriteLine(@"{0} = {1}", p.Key, p.Value.Replace("\n", "").Replace("\r", ""));

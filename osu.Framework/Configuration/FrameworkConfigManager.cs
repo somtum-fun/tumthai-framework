@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using osu.Framework.Bindables;
 using osu.Framework.Configuration.Tracking;
 using osu.Framework.Extensions;
 using osu.Framework.Graphics.Video;
@@ -45,6 +46,7 @@ namespace osu.Framework.Configuration
             SetDefault(FrameworkSetting.ShowUnicode, false);
             SetDefault(FrameworkSetting.Locale, string.Empty);
             SetDefault(FrameworkSetting.AllowDangerousUnlimitedNoCap, false);
+            SetDefault(FrameworkSetting.FrameSyncUncapped, false);
 
 #pragma warning disable 618
             SetDefault(FrameworkSetting.MapAbsoluteInputToWindow, false);
@@ -56,6 +58,30 @@ namespace osu.Framework.Configuration
         public FrameworkConfigManager(Storage storage, IDictionary<FrameworkSetting, object> defaultOverrides = null)
             : base(storage, defaultOverrides)
         {
+        }
+
+        // TumThai!Next: framework.ini is shared with TumThai, whose stock osu!framework can't parse FrameSync.UnlimitedNoCap
+        // ("Unable to parse config key FrameSync"). So it's written as Unlimited plus FrameSyncUncapped = True (a key stock
+        // osu!framework skips), and read back from the two.
+        protected override string SerialiseValue(FrameworkSetting lookup, IBindable bindable) =>
+            lookup == FrameworkSetting.FrameSync && Get<FrameSync>(FrameworkSetting.FrameSync) == Configuration.FrameSync.UnlimitedNoCap
+                ? nameof(Configuration.FrameSync.Unlimited)
+                : base.SerialiseValue(lookup, bindable);
+
+        private Bindable<FrameSync> frameSyncForUncapped;
+
+        protected override void PerformLoad()
+        {
+            base.PerformLoad();
+
+            if (Get<bool>(FrameworkSetting.FrameSyncUncapped) && Get<FrameSync>(FrameworkSetting.FrameSync) == Configuration.FrameSync.Unlimited)
+                SetValue(FrameworkSetting.FrameSync, Configuration.FrameSync.UnlimitedNoCap);
+
+            if (frameSyncForUncapped != null)
+                return;
+
+            frameSyncForUncapped = GetBindable<FrameSync>(FrameworkSetting.FrameSync);
+            frameSyncForUncapped.BindValueChanged(v => SetValue(FrameworkSetting.FrameSyncUncapped, v.NewValue == Configuration.FrameSync.UnlimitedNoCap), true);
         }
 
         public override TrackedSettings CreateTrackedSettings() => new TrackedSettings
@@ -105,6 +131,11 @@ namespace osu.Framework.Configuration
         ConfineMouseMode,
         FrameSync,
         AllowDangerousUnlimitedNoCap,
+
+        /// <summary>
+        /// TumThai!Next: <see cref="FrameSync"/> is <see cref="Configuration.FrameSync.UnlimitedNoCap"/> (the file says Unlimited).
+        /// </summary>
+        FrameSyncUncapped,
         ExecutionMode,
 
         ShowUnicode,
