@@ -48,6 +48,16 @@ namespace osu.Framework.Graphics.Textures
         /// </summary>
         public readonly float ScaleAdjust;
 
+        /// <summary>
+        /// The constructor before <c>atlasSize</c> was added, kept (with no defaults, so calls in source still pick the
+        /// other) for rulesets built against stock osu!framework: optional parameters are filled in when a caller is
+        /// compiled, so a DLL calling the six-argument constructor finds nothing without it.
+        /// </summary>
+        public TextureStore(IRenderer renderer, IResourceStore<TextureUpload> store, bool useAtlas, TextureFilteringMode filteringMode, bool manualMipmaps, float scaleAdjust)
+            : this(renderer, store, useAtlas, filteringMode, manualMipmaps, scaleAdjust, null)
+        {
+        }
+
         public TextureStore(IRenderer renderer, IResourceStore<TextureUpload> store = null, bool useAtlas = true, TextureFilteringMode filteringMode = TextureFilteringMode.Linear, bool manualMipmaps = false, float scaleAdjust = 2, int? atlasSize = null)
         {
             if (store != null)
