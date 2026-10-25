@@ -951,8 +951,10 @@ namespace osu.Framework.Platform
                     updateFrameSyncMode();
                     return;
                 }
-                catch
+                catch (Exception e)
                 {
+                    Logger.Log($"🖼️ {type.GetDescription()} couldn't be used: {e.Message}");
+
                     if (configRenderer.Value != RendererType.Automatic)
                     {
                         // If we fail, assume the user may have had a custom setting and switch it back to automatic.
@@ -1475,7 +1477,9 @@ namespace osu.Framework.Platform
 
         private void setVSyncMode()
         {
-            if (Window == null) return;
+            // The renderer is chosen (and the frame limits worked out) before the draw thread exists: vsync is set once it
+            // runs (frameSyncMode.TriggerChange() after startup). Without this, choosing a renderer threw for every one.
+            if (Window == null || DrawThread == null) return;
 
             DrawThread.Scheduler.Add(() => Renderer.VerticalSync = frameSyncMode.Value == FrameSync.VSync || frameSyncMode.Value == FrameSync.VSyncVRR);
         }
