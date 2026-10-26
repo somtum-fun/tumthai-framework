@@ -29,6 +29,9 @@ namespace osu.Framework.Audio
         private const int aaudio_callback_result_continue = 0;
         private const int aaudio_clock_monotonic = 0;
 
+        // See Start: a managed AAudio data callback crashes CFI-enabled libaaudio.
+        private static readonly bool enabled_until_native_callback = false;
+
         private const int channel_count = 2;
         private const int bytes_per_frame = channel_count * sizeof(float);
 
@@ -65,6 +68,17 @@ namespace osu.Framework.Audio
 
             if (RuntimeInfo.OS != RuntimeInfo.Platform.Android)
                 return false;
+
+            // Off until the data callback lives in a native library. libaaudio is built with CFI on many devices
+            // (Android 16 on Nothing phones, Pixels), so before every callback it checks the target's CFI shadow,
+            // and &onAudioData is a runtime-generated .NET thunk in anonymous memory with no shadow: the check
+            // itself segfaults (SIGSEGV SEGV_ACCERR in __cfi_slowpath on the AAudio_1 thread), seconds after start.
+            // BASS's own output also uses AAudio, from its native code, so the game still gets it.
+            if (!enabled_until_native_callback)
+            {
+                Logger.Log("[AAudio] Direct AAudio output is off (its callback can't pass Android's CFI check); using BASS output.");
+                return false;
+            }
 
             lock (syncLock)
             {
